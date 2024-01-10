@@ -1,0 +1,303 @@
+---
+title: "DiffusionNet: Discretization Agnostic Learning on Surfaces"
+subtitle: "A short introduction"
+author: "Alonso Martínez Cisneros"
+institute: "Freie Universität Berlin"
+format:
+    revealjs:
+        logo: img/fu-logo_volltonfarben.png
+        output-file: index.html
+        footer: "Geometric Deep Learning WiSe 23-24"
+        incremental: true
+        html-math-method: mathjax
+bibliography: refs.bib
+lang: en-us
+---
+
+## What we talk about when we talk about Geometric Deep Learning
+
+> Geometric Deep Learning is an emerging field aimed at applying
+> machine learning techniques in the context of geometric data analysis and
+> processing [REF]
+
+- Beyond the 5G's (Grids, Groups, Graphs, Geodesics), what problems are we
+trying to solve?
+    
+## Some example problems
+
+- Shape retrieval & classification
+    - Non-rigid 3D shape retrieval [solved in triangle meshes by
+    @lian2011shape].
+
+- Segmentation of geometric data 
+    - Segmentation of molecules [solved in point clouds by @poulenard2019].
+    - Segmentation of human bodies 
+
+## Some classic approaches
+
+The SHREC11 [@boyer2011shrec] benchmark is a collection of watertight 3D meshes.
+Some methods used (and cited by the authors of Diffusion Net) to solve the shape
+retrieval & classification problem are:
+
+- Field Convolutions for Surface CNNs [a.k.a FC @mitchel2021FC].
+- HodgeNet [@smirnov2021HodgeNet].
+
+----
+
+For the specific problem of segmentation of RNA molecules some methods used in
+the past are, applied on point clouds:
+
+- PointNet++
+- Effective Rotation-invariant Point CNN with Spherical Harmonics Kernels
+[a.k.a SPHNet @poulenard2019]
+
+. . .
+
+some other methods applied in the context of meshes are:
+
+- SplineCNN (Fey 2018)
+- SurfaceNetworks (Kostrikov 2018)
+
+## What is DiffusionNet? What does it propose?
+
+- Classic approaches are often tied-down to the particular representation they
+were trained on.
+
+- DiffusionNet aims to be:
+    - Discretization Agnostic
+    - Transfer Across Representations
+    - Efficient & Robust
+
+# DifussionNet
+
+---
+
+DifussionNet comprises three primary building blocks:
+
+1. **Multi-Layer Perceptrons (MLPs):**
+   - Applied at each point to model pointwise scalar functions of feature
+   channels.
+
+2. **Learned Diffusion Operation:**
+   - Used for propagating information across the domain.
+
+3. **Local Spatial Gradient Features:**
+   - Employed to expand the network's filter space beyond radially-symmetric
+   filters.
+
+. . . 
+
+The method is representation-agnostic, allowing its application to meshes or
+point clouds.
+
+
+## Some preeliminaries {.scrollable}
+
+### Pointwise Perceptrons
+
+On a mesh or point cloud with $V$ vertices, we have $D$ scalar features at
+each vertex.
+
+- Our first building block is a pointwise function $f : \mathbb{R}^D \to
+\mathbb{R}^D$, applied independently at each vertex to transform features.
+    - A standard multilayer perceptron (MLP) with shared weights across all
+    vertices to represent these functions is used.
+    - MLPs lack spatial awareness and inter-vertex communication.
+
+---
+
+Previous methods employed global reductions or explicit geodesic convolutions for communication.
+
+It is shown that simple learned diffusion layer effectively propagates
+information, eliminating the need for potentially costly or error-prone
+computations.
+
+----
+
+## Learned Diffusion {.smaller}
+
+In the continuous setting, diffusion of a scalar field $u$ on a domain is
+modeled by the heat equation
+$$
+  \tfrac{d}{dt} u_t = \Delta u_t,
+$$
+
+- The use of a difussion process (specifically the heat equation) spatially
+propagates features along the learning surface.
+    - Ensures invariance w.r.t surface sampling or meshing.
+    - The particulars of discretizing the diffusion process depend on the
+    discretization of the surface (i.e. meshes or point clouds) [^1]
+
+- We define a learned diffusion layer $h_t : \mathbb{R}^{V} \to \mathbb{R}^{V}$,
+which diffuses a feature channel $u$ for learned time $t \in \mathbb{R}_{\geq
+0}$.
+    - $h_t$ is applied independently to each feature channel, for a given
+    learned time $t$ for each.
+
+[^1]: The method commonly used for surfaces is based on a contribution by Prof.
+Polthier
+
+----
+
+In deep learning terms, diffusion is a smooth mean pooling operation with some
+advantages:
+
+- It has a geometrically-principled interpretation
+- Offers flexible support from local to global based on diffusion time
+- Differentiability allows automatic optimization of spatial support as a network parameter.
+
+- It is shown in the paper that simple and robust diffusion can, without loss of
+generality, replace radial geodesic convolution in the process of feature
+propagation.
+
+----
+
+## Spatial Gradient Features 
+
+- We can express the spacial gradients of the channels as a 2D vector in the
+tangent space of each vertex.
+  - (Blackboard illustration)
+
+- These gradient operators at each vertex can be assembled into a sparse matrix
+$G \in \mathbb{C}^{V \times V}$, which is applied to a vector $u$ of real values
+at vertices to produce gradient tangent vectors at each vertex.
+  - $G$ is independent of the features and can thus be precomputed, like the
+  First Fundamental Form of the Weingarten map of a shape.
+
+## {.smaller}
+
+- With the gradient information per vertex, we can learn features by computing
+an inner product between pairs of feature gradients at each vertex.
+
+- Given a collection of $D$ scalar feature channels:
+  - For each channel $u$ we construct the gradients as a vector of 2D gradients
+  per vector
+$$
+z_u := Gu
+$$
+
+  - At each vertex $v$ we stack the local gradients to form $w_v \in \mathbb{C}^{D}$
+
+  - We can calculate real-valued features as:
+$$
+g_v := \textrm{tanh}(\textrm{Re} (\overline{w}_v \odot A w_v))
+$$
+
+. . .
+
+ where $A$ is a learned parameter, $\odot$ is the Hadamard (entrywise) product.
+
+- The matrix $A$ can have real or complex entries. The choice depends on the
+orientability of the learning surface, since it makes the method more, or less
+tolerable to rotations of the gradients.
+
+
+## Full Architecture
+
+![DiffusionNet architecture for learning on surfaces. Each DiffusionNet block
+diffuses every feature for a learned time scale, forms spatial radient features
+and applieas a _spatially shared_ poitwise MLP at each vertex in a mesh/point
+cloud.](img/diffusion_net_arch)
+
+## Inputs {.smaller}
+
+DiffusionNet takes a vector of scalar values per-vertex as input features. Two
+simple choices are considered, with the option to include others when available.
+
+- **Raw 3D Coordinates:**
+  - Direct use of the raw 3D coordinates as input.
+  - Rotation augmentation can be applied to promote rigid invariance when inputs
+  lack consistent alignment.
+
+- **Heat Kernel Signatures (HKS):**
+  - Used when rigid or non-rigid invariance is desired.
+  - With HKS as input, the networks become invariant to any
+  orientation-preserving isometric deformation of the shape.
+
+- Higher-Order Descriptors like SHOT may be unnecessary due to the intrinsic
+nature of the approach.
+
+# How well does DiffusionNet perform?
+
+We show the results obtained by the authors in two tasks we mentioned during the
+introduction. The methods can be applied to raw spatial coordinates, in which
+case they are postfixed as "xyz", and heat kernel signatures, in which case they
+are annotated as "hks".
+
+## Classification performance {.smaller .scrollable}
+
+**Method**                                       **Accuracy**
+---------------------------------------------- --------------
+GWCNN                                                   90.3%
+MeshCNN                                                 91.0%
+HSN                                                     96.1%
+MeshWalker                                              97.1%
+PD-MeshNetl                                             99.1%
+HodgeNet [@smirnov2021HodgeNet]                         94.7%
+FC [@mitchel2021FC]                                     99.2%
+DiffusionNet - xyz (simplified)                         99.4%
+DiffusionNet - xyz                                      99.0%
+DiffusionNet - hks (simplified)                         99.5%
+DiffusionNet - hks                                      99.7%
+
+: DiffusionNet achieves nearly-perfect accuracy classifying 30-class SHREC11
+[@boyer2011shrec] while training on just 10 samples per class.
+
+
+## Segmentation performance {.smaller .scrollable}
+
+Accuracy of various mesh and point cloud schemes for RNA segmentation.
+DiffusionNet achieves state-of-the-art results, in part because it can be
+applied directly to the raw meshes.
+
+::: {.panel-tabset}
+### Point clouds 
+
+**Method**                                  **Accuracy**
+----------------------------------------- --------------
+PointNet++                                         74.4%
+PCNN                                               78.0%
+SPHNet [@poulenard2019]                            80.1%
+DiffusionNet - hks                                 84.0%
+DiffusionNet - xyz                                 85.0%
+
+### Mesh
+
+**Method**                                  **Accuracy**
+----------------------------------------- --------------
+SplineCNN                                          53.6%
+SurfaceNetworks                                    88.5%
+DiffusionNet - hks                                 91.0%
+DiffusionNet - xyz                                 91.5%
+
+:::
+
+##
+
+![All methods yield a visually plausible solution when trained on the same
+dataset as the query pair, but only DiffusionNet yields good results when
+generalizing after training on a different dataset (bottom
+row)](img/functional_textures_small.png)
+
+## DiffusionNet's advantages {.smaller .scrollable}
+
+- Discretization Agnostic Learning
+    - Robust Outputs
+    - Handling Invariants
+
+- Transfer Across Representations
+    - Consistency Across Representations
+    - Flexible Training Sets
+
+- Computational Efficiency:
+  - DiffusionNet requires standard linear algebra operations for training and
+  inference.
+  - Example: Spectral acceleration training on RNA meshes took 38ms per input, requiring 2.2GB GPU memory.
+
+- Scaling
+  - DiffusionNet's efficiency enables direct learning on common mesh data without significant simplification.
+
+- Stability and Robustness:
+  - Doesn't require complex geometry processing operations.
+
+# References
